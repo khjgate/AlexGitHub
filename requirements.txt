@@ -1,4 +1,0 @@
-# GitHub Actions 자동 발송을 위한 의존성
-requests
-beautifulsoup4
-lxml
