@@ -6,7 +6,7 @@ name: Newsletter Auto Send
 on:
   # 매주 월요일 오전 8시 KST (= 일요일 23:00 UTC)
   schedule:
-    - cron: '0 23 * * 0'
+    - cron: '0 23 * * 1'
   # 수동 실행도 가능
   workflow_dispatch:
 
