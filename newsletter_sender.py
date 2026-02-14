@@ -91,21 +91,30 @@ def upload_to_github(file_content, file_name):
         data['sha'] = sha
     
     # GitHub API로 파일 업로드/업데이트
+    log_path = os.path.join(os.path.dirname(__file__), 'github_upload_log.txt')
+    def log_print(msg):
+        print(msg)
+        with open(log_path, 'a', encoding='utf-8') as f:
+            f.write(msg + '\n')
     try:
         response = requests.put(url, headers=headers, json=data)
         if response.status_code in [200, 201]:
-            print(f'✅ GitHub 업로드 성공: {file_name}')
+            log_print(f'✅ GitHub 업로드 성공: {file_name}')
             return True
         else:
-            print(f'❌ GitHub 업로드 실패: {response.status_code} - {response.text}')
+            log_print(f'❌ GitHub 업로드 실패: {response.status_code} - {response.text}')
             return False
     except Exception as e:
-        print(f'❌ GitHub 업로드 오류: {e}')
+        log_print(f'❌ GitHub 업로드 오류: {e}')
         return False
 
 
 # 1. 뉴스 수집 함수 (구글 뉴스 RSS 활용)
 def collect_news():
+    # 구글 뉴스 RSS를 이용하여 각 카테고리별 키워드로 뉴스 수집
+    # 전주 월요일~일요일 사이의 뉴스 우선, 부족하면 2주/3주까지 확대
+    import urllib.parse
+    import warnings
     # 구글 뉴스 RSS를 이용하여 각 카테고리별 키워드로 뉴스 수집
     # 전주 월요일~일요일 사이의 뉴스 우선, 부족하면 2주/3주까지 확대
     import urllib.parse
@@ -119,10 +128,10 @@ def collect_news():
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
     
-    # 날짜 범위 계산 함수 (weeks_ago: 1=전주, 2=2주전, 3=3주전)
+    # 날짜 범위 계산 함수 (weeks_ago: 1=전주, 2=2주전, 3=3주전, 4=4주전)
     today = datetime.now()
     this_monday = today - timedelta(days=today.weekday())
-    
+
     def get_week_range(weeks_ago):
         """weeks_ago 주 전의 월~일 날짜 범위 반환"""
         week_monday = this_monday - timedelta(days=7 * weeks_ago)
@@ -130,27 +139,18 @@ def collect_news():
         start = week_monday.replace(hour=0, minute=0, second=0)
         end = week_sunday.replace(hour=23, minute=59, second=59)
         return start, end
-    
-    # 1주~3주 전 날짜 범위 미리 계산
+
+    # 1주~4주 전 날짜 범위 미리 계산
     week_ranges = {
         1: get_week_range(1),  # 전주
         2: get_week_range(2),  # 2주 전
         3: get_week_range(3),  # 3주 전
+        4: get_week_range(4),  # 4주 전
     }
-    
-    print(f'📅 뉴스 수집 기간: 1주전({week_ranges[1][0].strftime("%m/%d")}~{week_ranges[1][1].strftime("%m/%d")}) → 2주전 → 3주전 순으로 확대')
-    
-    # 신뢰할 수 있는 주요 언론사 목록
-    trusted_sources = [
-        '연합뉴스', '한국경제', '매일경제', '조선일보', '중앙일보', '동아일보',
-        'KBS', 'MBC', 'SBS', 'YTN', 'JTBC', 'TV조선', '채널A',
-        '한겨레', '경향신문', '서울경제', '아시아경제', '뉴시스', '뉴스1',
-        '이데일리', '머니투데이', '파이낸셜뉴스', '헤럴드경제', '전자신문',
-        'ZDNet', '지디넷', 'IT조선', 'ITWorld', '디지털타임스', '디지털데일리',
-        'AI타임즈', '인공지능신문', '로봇신문', '테크M', 'Bloter', '블로터',
-        'The Guru', '글로벌이코노믹', '비즈한국', '더팩트', '데일리안'
-    ]
-    
+
+    print(f'📅 뉴스 수집 기간: 1주전({week_ranges[1][0].strftime("%m/%d")}~{week_ranges[1][1].strftime("%m/%d")}) → 2주전 → 3주전 → 4주전 순으로 확대')
+    # 프롬프트/조회조건을 별도 파일에서 import
+    from newsletter_prompt import trusted_sources, trusted_academic_sources, categories
     # 날짜 파싱 함수
     def parse_pub_date(pub_date_str):
         """RSS pubDate를 datetime으로 파싱"""
@@ -165,7 +165,7 @@ def collect_news():
         pub_date = parse_pub_date(pub_date_str)
         if pub_date:
             pub_date_naive = pub_date.replace(tzinfo=None)
-            for weeks_ago in [1, 2, 3]:
+            for weeks_ago in [1, 2, 3, 4]:
                 start, end = week_ranges[weeks_ago]
                 if start <= pub_date_naive <= end:
                     return weeks_ago
@@ -210,52 +210,52 @@ def collect_news():
     
     news = {}
 
-    # 카테고리별 검색 키워드 설정 (리스트로 다양한 키워드 검색)
-    categories = {
-        'AX 활용 사례': ['AX 자동화 혁신', 'AI 업무 자동화 사례', 'RPA AI 도입', '기업 AI 전환', 'AI 디지털 전환'],
-        '국내 AI 소식': ['AI 인공지능 기술', '딥러닝 머신러닝', 'GPU AI 인프라', 'AI 연구 대학', '삼성 AI', '네이버 AI', 'LG AI', 'SK AI', '카카오 AI'],
-        '해외 AI 신규뉴스': ['OpenAI GPT', '구글 AI Gemini', '마이크로소프트 Copilot', '애플 AI', '메타 AI 라마', '엔비디아 AI'],
-        '피지컬 AI': ['테슬라 옵티머스 로봇', 'Figure AI 휴머노이드', '엔비디아 로봇 AI', '보스턴다이나믹스 아틀라스', '중국 휴머노이드 로봇'],
-        '금융사 AI 적용 사례 및 규제 완화 소식': ['금융 AI 도입', '은행 AI 서비스', '핀테크 AI', '보험 AI', '금융 규제 완화'],
-        '🔥 한화그룹 Hot News': ['한화 그룹', '한화에어로스페이스', '한화오션', '한화솔루션', '한화생명', '한화 방산']
-    }
+    # ...카테고리별 검색 키워드는 newsletter_prompt.py에서 import...
 
     for category, keyword in categories.items():
         news_list = []
         collected_titles = []  # 중복 체크용 제목 리스트
-        
+
         # RSS에서 모든 아이템 수집 (날짜 정보 포함)
         all_items_with_date = []
-        
+
         try:
             # 모든 카테고리가 리스트 형태 - 여러 키워드로 검색하여 다양한 콘텐츠 수집
             keywords = keyword if isinstance(keyword, list) else [keyword]
             for kw in keywords:
-                encoded_keyword = urllib.parse.quote(kw)
-                url = f'https://news.google.com/rss/search?q={encoded_keyword}&hl=ko&gl=KR&ceid=KR:ko'
-                res = requests.get(url, headers=headers, timeout=10, verify=False)
-                soup = BeautifulSoup(res.text, 'xml')
-                items = soup.find_all('item')
-                
-                for item in items:
-                    title = item.find('title').get_text(strip=True) if item.find('title') else ''
-                    link = item.find('link').get_text(strip=True) if item.find('link') else ''
-                    source = item.find('source').get_text(strip=True) if item.find('source') else ''
-                    pub_date_str = item.find('pubDate').get_text(strip=True) if item.find('pubDate') else ''
-                    
-                    weeks_ago = get_week_ago(pub_date_str)
-                    if weeks_ago:
-                        all_items_with_date.append({
-                            'title': title,
-                            'link': link,
-                            'source': source,
-                            'pub_date_str': pub_date_str,
-                            'weeks_ago': weeks_ago
-                        })
-            
-            # weeks_ago 기준으로 정렬 (1주전 우선 → 2주전 → 3주전)
-            all_items_with_date.sort(key=lambda x: x['weeks_ago'])
-            
+                try:
+                    encoded_keyword = urllib.parse.quote(kw)
+                    url = f'https://news.google.com/rss/search?q={encoded_keyword}&hl=ko&gl=KR&ceid=KR:ko'
+                    # timeout을 3초로 줄이고, 네트워크 오류 발생 시 해당 키워드는 건너뜀
+                    res = requests.get(url, headers=headers, timeout=3, verify=False)
+                    soup = BeautifulSoup(res.text, 'xml')
+                    items = soup.find_all('item')
+
+                    for item in items:
+                        title = item.find('title').get_text(strip=True) if item.find('title') else ''
+                        link = item.find('link').get_text(strip=True) if item.find('link') else ''
+                        source = item.find('source').get_text(strip=True) if item.find('source') else ''
+                        pub_date_str = item.find('pubDate').get_text(strip=True) if item.find('pubDate') else ''
+
+                        weeks_ago = get_week_ago(pub_date_str)
+                        # 학술기관 키워드가 제목/소스에 포함된 뉴스는 '학술기관 AX Trend'에서만 보여주고, 다른 카테고리에서는 제외
+                        if any(ts in source or ts in title for ts in trusted_academic_sources):
+                            continue
+                        if weeks_ago:
+                            all_items_with_date.append({
+                                'title': title,
+                                'link': link,
+                                'source': source,
+                                'pub_date_str': pub_date_str,
+                                'weeks_ago': weeks_ago
+                            })
+                except Exception as e:
+                    # 네트워크 오류, 타임아웃 등 발생 시 해당 키워드는 건너뜀
+                    continue
+
+            # pub_date_str 기준 최신순 정렬
+            all_items_with_date.sort(key=lambda x: x['pub_date_str'], reverse=True)
+
             # 신뢰할 수 있는 언론사 뉴스 먼저 수집 (5개까지)
             for item in all_items_with_date:
                 if len(news_list) >= 5:
@@ -265,18 +265,29 @@ def collect_news():
                 source = item['source']
                 pub_date_str = item['pub_date_str']
                 weeks_ago = item['weeks_ago']
-                
+
                 # 중복 체크
                 if is_duplicate(title, collected_titles):
                     continue
-                
+
+                # 신뢰 언론사만 필터링 (학술기관은 AX Trend에만 사용)
                 is_trusted = any(ts in source or ts in title for ts in trusted_sources)
                 if title and link and is_trusted:
+                    # 날짜 표기 보완: weeks_ago가 None이어도 날짜는 항상 표시
                     date_display_str = format_date_with_week(pub_date_str, weeks_ago)
+                    if not date_display_str:
+                        # pub_date_str이 있으면 날짜만이라도 표시
+                        try:
+                            from email.utils import parsedate_to_datetime
+                            pub_date = parsedate_to_datetime(pub_date_str)
+                            if pub_date:
+                                date_display_str = pub_date.strftime('%m/%d')
+                        except:
+                            pass
                     date_display = f" <span style='color:#3b82f6;font-size:0.8em;'>[{date_display_str}]</span>" if date_display_str else ''
                     news_list.append(f"<a href='{link}' target='_blank'>{title}</a> <span style='color:#888;font-size:0.85em;'>({source})</span>{date_display}")
                     collected_titles.append(title)
-            
+
             # 5개 미만이면 비신뢰 언론사 뉴스로 채우기
             if len(news_list) < 5:
                 for item in all_items_with_date:
@@ -287,29 +298,113 @@ def collect_news():
                     source = item['source']
                     pub_date_str = item['pub_date_str']
                     weeks_ago = item['weeks_ago']
-                    
+
                     # 중복 체크
                     if is_duplicate(title, collected_titles):
                         continue
-                    
+
                     if title and link:
+                        # 날짜 표기 보완: weeks_ago가 None이어도 날짜는 항상 표시
                         date_display_str = format_date_with_week(pub_date_str, weeks_ago)
+                        if not date_display_str:
+                            try:
+                                from email.utils import parsedate_to_datetime
+                                pub_date = parsedate_to_datetime(pub_date_str)
+                                if pub_date:
+                                    date_display_str = pub_date.strftime('%m/%d')
+                            except:
+                                pass
                         date_display = f" <span style='color:#3b82f6;font-size:0.8em;'>[{date_display_str}]</span>" if date_display_str else ''
                         news_list.append(f"<a href='{link}' target='_blank'>{title}</a> <span style='color:#888;font-size:0.85em;'>({source})</span>{date_display}")
                         collected_titles.append(title)
-            
+
         except Exception as e:
             news_list.append(f'수집 오류: {e}')
-        
+
         # 수집된 뉴스가 없으면 안내 메시지 추가
         if not news_list:
-            news_list.append('최근 3주간 관련 뉴스가 없습니다.')
-        
+            news_list.append('최근 4주간 관련 뉴스가 없습니다.')
+
         news[category] = news_list
 
-    return news
 
-# 유튜브 추천 영상 수집 함수
+    # 학술기관 AX Trend 카테고리: trusted_academic_sources 키워드로 뉴스 5개까지 조회
+    academic_news_list = []
+    collected_titles = []
+    all_items_with_date = []
+    try:
+        # 정치, 사회, 연예 등 비학술적 키워드 목록
+        non_academic_keywords = [
+            '정치', '대통령', '총리', '국회', '의원', '선거', '정당', '정부', '청와대',
+            '사회', '사건', '사고', '범죄', '재판', '법원', '검찰', '경찰',
+            '연예', '연예인', '가수', '배우', '방송', '드라마', '영화', '스포츠',
+            '사망', '사건사고', '논란', '입학취소', '징계', '정치권', '정치인', '부정', '비리', '의혹', '논문 표절', '입시', '입학', '퇴출', '징계', '윤리', '조민', '김건희'
+        ]
+        for kw in trusted_academic_sources:
+            encoded_keyword = urllib.parse.quote(kw)
+            url = f'https://news.google.com/rss/search?q={encoded_keyword}&hl=ko&gl=KR&ceid=KR:ko'
+            res = requests.get(url, headers=headers, timeout=10, verify=False)
+            soup = BeautifulSoup(res.text, 'xml')
+            items = soup.find_all('item')
+            for item in items:
+                title = item.find('title').get_text(strip=True) if item.find('title') else ''
+                link = item.find('link').get_text(strip=True) if item.find('link') else ''
+                source = item.find('source').get_text(strip=True) if item.find('source') else ''
+                pub_date_str = item.find('pubDate').get_text(strip=True) if item.find('pubDate') else ''
+                weeks_ago = get_week_ago(pub_date_str)
+                # 비학술적 키워드가 제목에 포함되어 있으면 제외
+                if any(bad_kw in title for bad_kw in non_academic_keywords):
+                    continue
+                if weeks_ago:
+                    all_items_with_date.append({
+                        'title': title,
+                        'link': link,
+                        'source': source,
+                        'pub_date_str': pub_date_str,
+                        'weeks_ago': weeks_ago
+                    })
+        # pub_date_str 기준 최신순 정렬
+        all_items_with_date.sort(key=lambda x: x['pub_date_str'], reverse=True)
+        for item in all_items_with_date:
+            if len(academic_news_list) >= 5:
+                break
+            title = item['title']
+            link = item['link']
+            source = item['source']
+            pub_date_str = item['pub_date_str']
+            weeks_ago = item['weeks_ago']
+            if is_duplicate(title, collected_titles):
+                continue
+            # 신뢰 학술기관 키워드가 제목 또는 소스에 포함된 경우만
+            is_trusted_academic = any(ts in source or ts in title for ts in trusted_academic_sources)
+            if title and link and is_trusted_academic:
+                date_display_str = format_date_with_week(pub_date_str, weeks_ago)
+                if not date_display_str:
+                    try:
+                        from email.utils import parsedate_to_datetime
+                        pub_date = parsedate_to_datetime(pub_date_str)
+                        if pub_date:
+                            date_display_str = pub_date.strftime('%m/%d')
+                    except:
+                        pass
+                date_display = f" <span style='color:#3b82f6;font-size:0.8em;'>[{date_display_str}]</span>" if date_display_str else ''
+                academic_news_list.append(f"<a href='{link}' target='_blank'>{title}</a> <span style='color:#888;font-size:0.85em;'>({source})</span>{date_display}")
+                collected_titles.append(title)
+        if not academic_news_list:
+            academic_news_list.append('최근 4주간 관련 뉴스가 없습니다.')
+    except Exception as e:
+        academic_news_list.append(f'수집 오류: {e}')
+    news['학술기관 AX Trend'] = academic_news_list
+
+    # 카테고리 순서 재정렬: 해외 AI 신규뉴스 뒤에 학술기관 AX Trend, 그 다음 피지컬 AI
+    ordered_keys = []
+    for k in ['AX 활용 사례', '국내 AI 소식', '해외 AI 신규뉴스', '학술기관 AX Trend', '피지컬 AI', '금융사 AI 적용 사례 및 규제 완화 소식', '🔥 한화그룹 Hot News']:
+        if k in news:
+            ordered_keys.append(k)
+    # 기존 news 딕셔너리의 순서 보장
+    news = {k: news[k] for k in ordered_keys}
+
+    return news
 def collect_youtube_recommendations():
     # IT/AI 학습 목적의 건전한 영상만 수집 (공개 발표용)
     # 전주 월요일~일요일 사이 영상, 인기순 정렬
@@ -371,18 +466,10 @@ def collect_youtube_recommendations():
             pass
         return ''
     
-    # IT/AI 학습 목적의 검색 키워드 (인기순 정렬 적용)
-    search_keywords = [
-        'AI 인공지능 강의 2026',
-        '챗GPT 활용법 2026',
-        'AI 업무 자동화',
-        '디지털전환 DX 사례',
-        '데이터 분석 실무',
-        'AX 기업 혁신',
-        '인공지능 비즈니스'
-    ]
+    # 유튜브 검색 키워드는 newsletter_prompt.py에서 import
+    from newsletter_prompt import youtube_search_keywords
     
-    for keyword in search_keywords:
+    for keyword in youtube_search_keywords:
         try:
             encoded_keyword = urllib.parse.quote(keyword)
             # YouTube 검색 - 이번 주 업로드 + 조회수순 정렬
@@ -473,57 +560,36 @@ def generate_html(news, youtube_recommendations=None, email_version=True):
         banner_bg = 'background:linear-gradient(90deg, #ff6b35 0%, #f7931e 100%);'  # 브라우저용 그라데이션
     
     html = f"""
-    <html>
-    <head>
-        <meta charset='UTF-8'>
-        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-        <title>AX / IT 트랜드 뉴스레터</title>
-        <style>
-            /* 반응형 미디어 쿼리 */
-            @media only screen and (max-width: 600px) {{
-                .email-container {{
-                    width: 100% !important;
-                    padding: 10px !important;
-                }}
-                .header-cell {{
-                    padding: 20px 15px !important;
-                }}
-                .header-title {{
-                    font-size: 24px !important;
-                }}
-                .header-subtitle {{
-                    font-size: 12px !important;
-                }}
-                .date-badge {{
-                    display: none !important;
-                }}
-                .content-cell {{
-                    padding: 15px !important;
-                }}
-                .section-title {{
-                    font-size: 1em !important;
-                }}
-                .news-item {{
-                    font-size: 14px !important;
-                }}
-                .youtube-thumb {{
-                    width: 120px !important;
-                    height: 68px !important;
-                }}
-                .youtube-title {{
-                    font-size: 13px !important;
-                }}
-                .footer-cell {{
-                    padding: 15px !important;
-                }}
-                .logo-badge {{
-                    padding: 8px 12px !important;
-                }}
-                .logo-text {{
-                    font-size: 14px !important;
-                }}
-            }}
-        </style>
+    <style>
+        .date-badge {{{{
+            display: none !important;
+        }}}}
+        .content-cell {{{{
+            padding: 15px !important;
+        }}}}
+        .section-title {{{{
+            font-size: 1em !important;
+        }}}}
+        .news-item {{{{
+            font-size: 14px !important;
+        }}}}
+        .youtube-thumb {{{{
+            width: 120px !important;
+            height: 68px !important;
+        }}}}
+        .youtube-title {{{{
+            font-size: 13px !important;
+        }}}}
+        .footer-cell {{{{
+            padding: 15px !important;
+        }}}}
+        .logo-badge {{{{
+            padding: 8px 12px !important;
+        }}}}
+        .logo-text {{{{
+            font-size: 14px !important;
+        }}}}
+    </style>
     </head>
     <body style='font-family:Segoe UI,Arial,sans-serif; background-color:#f5f5f5; margin:0; padding:10px; word-wrap:break-word; word-break:break-word;'>
         <!-- 웹 브라우저에서 보기 배너 (Outlook 호환) -->
@@ -746,37 +812,18 @@ if __name__ == '__main__':
     # 미리보기용 HTML 파일 경로 설정 (현재 스크립트 위치 기준)
     script_dir = os.path.dirname(os.path.abspath(__file__))
     preview_path = os.path.join(script_dir, 'newsletter_preview_auto.html')
-    
-    # GitHub Pages URL 사용 (Outlook 보안 경고 방지)
-    github_file_name = 'newsletter_preview_auto.html'
-    web_version_url = f'{GITHUB_PAGES_URL}/{github_file_name}'
-    
+
     # 1. 브라우저 버전 HTML 생성 (그라데이션 적용)
     html_browser = generate_html(news, youtube_recommendations, email_version=False)
-    html_browser = html_browser.replace('{{web_version_url}}', web_version_url)
-    
-    # 2. 이메일 버전 HTML 생성 (단색 배경, 호환성 우선)
-    html_email = generate_html(news, youtube_recommendations, email_version=True)
-    html_email = html_email.replace('{{web_version_url}}', web_version_url)
+    html_browser = html_browser.replace('{{web_version_url}}', preview_path)
 
     # 브라우저 버전 HTML 파일로 로컬 저장
     with open(preview_path, 'w', encoding='utf-8') as f:
         f.write(html_browser)
     print(f'브라우저 버전 HTML 저장 완료: {preview_path}')
-    
-    # GitHub에 자동 업로드 (GitHub Pages용)
-    print('\n📤 GitHub에 업로드 중...')
-    upload_success = upload_to_github(html_browser, github_file_name)
-    if upload_success:
-        print(f'🌐 웹 버전 URL: {web_version_url}')
-    else:
-        print('⚠️ GitHub 업로드 실패 - 로컬 파일 경로 사용')
-        web_version_url = 'file:///' + preview_path.replace('\\', '/')
 
     # 웹브라우저로 자동 오픈
     webbrowser.open('file://' + preview_path)
 
-    # 실제 메일 발송 (이메일 버전 - 단색 배경)
-    send_email(html_email)
-    print('이메일 버전: 단색 배경 (호환성 우선)')
-    print('브라우저 버전: 그라데이션 배경 (풀 디자인)')
+    # GitHub 업로드 및 이메일 발송은 테스트용으로 생략
+    print('테스트: GitHub 업로드 및 이메일 발송 생략, HTML만 생성/오픈')
